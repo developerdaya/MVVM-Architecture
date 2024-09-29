@@ -6,16 +6,17 @@ Implementing the MVVM (Model-View-ViewModel) architecture in an Android Kotlin a
 First, ensure that you have the necessary dependencies in your `build.gradle` file:
 
 ```groovy
-dependencies {
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.5.1'
-    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.5.1'
-    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
-    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
-    implementation 'io.reactivex.rxjava2:rxjava:2.2.20'
-    implementation 'io.reactivex.rxjava2:rxandroid:2.1.1'
-    implementation 'androidx.recyclerview:recyclerview:1.2.1'
-    implementation 'com.google.android.material:material:1.4.0'
-}
+  dependencies {
+        implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.5.1")
+        implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.5.1")
+        implementation ("com.squareup.retrofit2:retrofit:2.9.0")
+        implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
+        implementation ("com.squareup.retrofit2:adapter-rxjava2:2.9.0")
+        implementation ("io.reactivex.rxjava2:rxjava:2.2.20")
+        implementation ("io.reactivex.rxjava2:rxandroid:2.1.1")
+        implementation ("com.squareup.okhttp3:logging-interceptor:4.9.3")
+    }
+
 ```
 
 ### 2. Create API Interface
@@ -23,14 +24,13 @@ dependencies {
 Create an API interface to define the API endpoints. Here's how you can do that:
 
 ```kotlin
-package com.consultantuser.webservice
-
-import io.reactivex.Single
+package com.developerdaya.mvvmexample.network
+import com.developerdaya.mvvmexample.model.EmployeeList
+import io.reactivex.Observable
 import retrofit2.http.GET
-
 interface ApiInterface {
-    @GET("your_endpoint_here") // Replace with your actual endpoint
-    fun getEmployees(): Single<List<Employee>>
+    @GET("51508676-f32f-48d8-8742-f74c526ee62c")
+    fun getEmployees(): Observable<EmployeeList>
 }
 ```
 
@@ -39,22 +39,30 @@ interface ApiInterface {
 Create a Retrofit instance to manage network requests.
 
 ```kotlin
-package com.consultantuser.webservice
-
+package com.developerdaya.mvvmexample.network
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import retrofit2.adapter.rxjava2.RxJava2CallAdapterFactory
 import retrofit2.converter.gson.GsonConverterFactory
-
-object Retrofit {
-    private const val BASE_URL = "https://mocki.io/v1/856e559e-1af2-41ff-93ea-02e3ef91ea55/" // Your base URL
-
+object RetrofitUtil {
+    const val BASE_URL = "https://mocki.io/v1/"
     fun createBaseApiService(): ApiInterface {
+        val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
+        val httpClient = OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .build()
+
         return Retrofit.Builder()
             .baseUrl(BASE_URL)
+            .client(httpClient)
             .addConverterFactory(GsonConverterFactory.create())
+            .addCallAdapterFactory(RxJava2CallAdapterFactory.create())
             .build()
             .create(ApiInterface::class.java)
     }
 }
+
 ```
 
 ### 4. Create the BaseViewModel
@@ -62,25 +70,16 @@ object Retrofit {
 This class will handle common functionalities for all ViewModels.
 
 ```kotlin
-package com.basecode.base
-
-import androidx.lifecycle.MutableLiveData
+package com.developerdaya.mvvmexample.base
 import androidx.lifecycle.ViewModel
-import com.consultantuser.webservice.ApiInterface
-import com.consultantuser.webservice.Retrofit
-
+import com.developerdaya.mvvmexample.network.ApiInterface
+import com.developerdaya.mvvmexample.network.RetrofitUtil
 abstract class BaseViewModel : ViewModel() {
-    val throwable = MutableLiveData<Throwable>()
-    val success = MutableLiveData<Any>()
-
     val api: ApiInterface by lazy {
-        Retrofit.createBaseApiService()
-    }
-
-    fun onResponseError(it: Throwable?) {
-        throwable.postValue(it)
+        RetrofitUtil.createBaseApiService()
     }
 }
+
 ```
 
 ### 5. Create the ViewModel
@@ -88,16 +87,19 @@ abstract class BaseViewModel : ViewModel() {
 Now, create your specific ViewModel that will extend `BaseViewModel`.
 
 ```kotlin
-import com.basecode.base.BaseViewModel
+package com.developerdaya.mvvmexample.ui.viewmodel
+import androidx.lifecycle.MutableLiveData
+import com.developerdaya.mvvmexample.base.BaseViewModel
+import com.developerdaya.mvvmexample.model.EmployeeList
 import io.reactivex.disposables.Disposable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
-
 class EmployeesViewModel : BaseViewModel() {
     lateinit var disposable: Disposable
-    val getEmployeesResp = MutableLiveData<List<Employee>>() // List of employees
+    val getEmployeesResp = MutableLiveData<EmployeeList>()
     var progressLoading = MutableLiveData<Boolean>()
     var errorMessage = MutableLiveData<Throwable>()
+    var statusCode = MutableLiveData<String>("MVVM Example")
 
     fun getEmployees() {
         disposable = api.getEmployees()
@@ -115,7 +117,10 @@ class EmployeesViewModel : BaseViewModel() {
                 errorMessage.value = it
             })
     }
+
+
 }
+
 ```
 
 ### 6. Create the Employee Data Class
@@ -123,10 +128,15 @@ class EmployeesViewModel : BaseViewModel() {
 Define the data model for an employee.
 
 ```kotlin
-data class Employee(
-    val name: String,
-    val profile: String
-)
+package com.developerdaya.mvvmexample.model
+data class EmployeeList(var message:String,val employees:ArrayList<Employee>)
+{
+    data class Employee(
+        val name: String,
+        val profile: String
+    )
+}
+
 ```
 
 ### 7. Create the RecyclerView Adapter
@@ -134,30 +144,34 @@ data class Employee(
 Create an adapter for the RecyclerView to display the list of employees.
 
 ```kotlin
+package com.developerdaya.mvvmexample.ui.adapter
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-
-class EmployeeAdapter(private val employees: List<Employee>) : RecyclerView.Adapter<EmployeeAdapter.EmployeeViewHolder>() {
-
+import com.developerdaya.mvvmexample.databinding.ItemEmployeeBinding
+import com.developerdaya.mvvmexample.model.EmployeeList
+class EmployeeAdapter(val employees: ArrayList<EmployeeList.Employee>) :
+    RecyclerView.Adapter<EmployeeAdapter.EmployeeViewHolder>() {
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EmployeeViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_employee, parent, false)
-        return EmployeeViewHolder(view)
+        var inflater = LayoutInflater.from(parent.context)
+        val binding = ItemEmployeeBinding.inflate(inflater, parent, false)
+        return EmployeeViewHolder(binding)
     }
-
     override fun onBindViewHolder(holder: EmployeeViewHolder, position: Int) {
         holder.bind(employees[position])
     }
 
     override fun getItemCount(): Int = employees.size
+    class EmployeeViewHolder(var binding: ItemEmployeeBinding) :
+        RecyclerView.ViewHolder(binding.root) {
 
-    class EmployeeViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        fun bind(employee: Employee) {
-            // Bind employee data to your views here
+        fun bind(employee: EmployeeList.Employee) {
+            binding.textName.text = employee.name
+            binding.textProfile.text = employee.profile
         }
     }
 }
+
 ```
 
 ### 8. Create the RecyclerView Item Layout
@@ -169,18 +183,28 @@ Create an XML layout for the RecyclerView item (e.g., `item_employee.xml`).
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="#D0D0D0"
+    android:padding="15dp"
+    android:layout_marginTop="10dp"
     android:orientation="vertical">
 
     <TextView
         android:id="@+id/textName"
+        android:text="Developer Daya"
+        android:textSize="20sp"
+        android:fontFamily="serif"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content" />
 
     <TextView
         android:id="@+id/textProfile"
+        android:text="Android Developer"
+        android:textSize="20sp"
+        android:fontFamily="sans-serif-medium"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content" />
 </LinearLayout>
+
 ```
 
 ### 9. Create the Activity/Fragment Layout
@@ -188,17 +212,47 @@ Create an XML layout for the RecyclerView item (e.g., `item_employee.xml`).
 Create the layout for your Activity or Fragment (e.g., `activity_employees.xml`).
 
 ```xml
-<!-- activity_employees.xml -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<layout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+    <data>
+        <variable
+            name="viewModel"
+            type="com.developerdaya.mvvmexample.ui.viewmodel.EmployeesViewModel" />
+    </data>
+
+<LinearLayout
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
+    <TextView
+        android:id="@+id/statusName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@{viewModel.statusCode}"
+        android:textSize="20sp"
+        android:fontFamily="serif"
+        android:layout_marginTop="16dp"
+        android:layout_marginHorizontal="18dp"
+        android:layout_gravity="center"
+        />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:layout_marginBottom="50dp"
+        android:layout_marginHorizontal="18dp"
+        android:layout_marginTop="16dp"
+        android:orientation="vertical"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+        app:layout_constraintTop_toBottomOf="@+id/categoryName"
+        tools:listitem="@layout/item_employee"
+        />
 </LinearLayout>
+</layout>
 ```
 
 ### 10. Setup the Activity/Fragment
@@ -206,37 +260,57 @@ Create the layout for your Activity or Fragment (e.g., `activity_employees.xml`)
 In your Activity or Fragment, set up the RecyclerView, ViewModel, and data binding.
 
 ```kotlin
+package com.developerdaya.mvvmexample.ui.view
+
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.developerdaya.mvvmexample.R
+import com.developerdaya.mvvmexample.databinding.ActivityEmployeesBinding
+import com.developerdaya.mvvmexample.ui.adapter.EmployeeAdapter
+import com.developerdaya.mvvmexample.ui.viewmodel.EmployeesViewModel
+import com.google.android.material.snackbar.Snackbar
 
 class EmployeesActivity : AppCompatActivity() {
-    private lateinit var recyclerView: RecyclerView
     private lateinit var employeeAdapter: EmployeeAdapter
-
+    lateinit var binding: ActivityEmployeesBinding
     private val viewModel: EmployeesViewModel by viewModels()
+    var TAG = "EmployeesActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_employees)
+        binding = ActivityEmployeesBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        initViews()
+        observer()
 
-        recyclerView = findViewById(R.id.recyclerView)
-        recyclerView.layoutManager = LinearLayoutManager(this)
+    }
 
+    private fun initViews() {
+        binding.viewModel  = EmployeesViewModel()
+        binding.lifecycleOwner = this
+        viewModel.getEmployees()
+    }
+
+    private fun observer() {
         viewModel.getEmployeesResp.observe(this) {
-            employeeAdapter = EmployeeAdapter(it)
-            recyclerView.adapter = employeeAdapter
+            Log.d(TAG, "observer: $it")
+            binding.viewModel?.statusCode?.value ="MVVM Example : ${it.message}"
+            binding.statusName.text = "MVVM Example : ${it.message}"
+            Snackbar.make(binding.root, "Success : ${it.message}", Snackbar.LENGTH_LONG).show()
+            employeeAdapter = EmployeeAdapter(it.employees)
+           binding. recyclerView.adapter = employeeAdapter
         }
 
         viewModel.errorMessage.observe(this) {
-            // Handle error
+            Snackbar.make(binding.root, it.localizedMessage, Snackbar.LENGTH_LONG).show()
         }
-
-        viewModel.getEmployees()
     }
 }
+
 ```
 
 ### 11. Error Handling Class (Optional)
@@ -249,17 +323,104 @@ data class ApiError(
 )
 ```
 
+### 11.5 Handle Error
+```
+package com.developerdaya.mvvmexample.utils
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import android.widget.Toast
+import com.developerdaya.mvvmexample.R
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import retrofit2.HttpException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+object ErrorUtil {
+     fun getGsonInstance(): Gson {
+        return GsonBuilder().create()
+    }
+    fun handleApiError(context: Context?, throwable: Throwable)
+    {
+        if (context == null) return
+        when (throwable)
+        {
+            is ConnectException -> Toast.makeText(
+                context,
+                "Network Error PLease Try Later ",
+                Toast.LENGTH_SHORT
+            ).show()
+            is SocketTimeoutException -> Toast.makeText(
+                context,
+                "Connection Lost PLease Try Later",
+                Toast.LENGTH_SHORT
+            ).show()
+            is UnknownHostException, is InternalError -> Toast.makeText(
+                context,
+                "Server Error PLease Try Later",
+                Toast.LENGTH_SHORT
+            ).show()
+            is HttpException -> {
+                try {
+                    when (throwable.code()) {
+                        401 -> {
+                            Toast.makeText(context, "Your session has expired. Please login again.", Toast.LENGTH_SHORT).show()
+                        }
+                        else -> {
+                            displayError(context, throwable)
+                        }
+                    }
+                } catch (exception: Exception) {
+                    Log.e("error", exception.toString())
+                }
+            }
+            else -> {
+                Toast.makeText(
+                    context, "Something Went Wrong",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+        }
+    }
+
+
+    fun displayError(context: Context, exception: HttpException) {
+        try {
+            val errorBody = getGsonInstance().fromJson(
+                exception.response()!!.errorBody()?.charStream(),
+                ApiError::class.java
+            )
+            Toast.makeText(context, errorBody.message, Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Log.e("MyExceptions", e.message!!)
+            Toast.makeText(
+                context, "Something Went Wrong",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+}
+
+```
+
+
+
 ### 12. Enable Data Binding (Optional)
 
 If you want to use Data Binding, ensure you have it enabled in your `build.gradle` file.
 
-```groovy
-android {
-    ...
-    buildFeatures {
-        dataBinding true
+```
+    dataBinding {
+        enable = true
     }
-}
+      viewBinding {
+        enable = true
+    }
+
+
 ```
 
 Yeh dependencies Android project mein use ki jaane wali libraries hain jo aapke application ke different functionalities ko enhance karte hain. Inke code snippets aur inke kaam ke baare mein yeh hai:
@@ -355,4 +516,4 @@ implementation ("com.squareup.okhttp3:logging-interceptor:4.9.3")
         .build()
     ```
 
-### Happy Coding : :)
+### Happy Coding :)
