@@ -313,7 +313,7 @@ class EmployeesActivity : AppCompatActivity() {
 
 ```
 
-### 11. Error Handling Class (Optional)
+### 11. Error Handling Class
 
 You can create a simple error handling class if needed.
 
@@ -408,7 +408,7 @@ object ErrorUtil {
 
 
 
-### 12. Enable Data Binding (Optional)
+### 12. Enable Data Binding.
 
 If you want to use Data Binding, ensure you have it enabled in your `build.gradle` file.
 
